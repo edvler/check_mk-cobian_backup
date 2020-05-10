@@ -4,7 +4,11 @@ author: Matthias Maderer <edvler@edvler-blog.de>
 license: GPLv2
 distribution: check_mk
 description:
- TODO
+ This check parses the logfile of Cobian Backup.
 
+ {Installation:}
+ https://github.com/edvler/check_mk-cobian_backup
+
+ 
 inventory:
- TODO
+ One service is created for each backup task in Cobian Backup
