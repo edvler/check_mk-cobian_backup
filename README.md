@@ -17,7 +17,7 @@ root@monitoring01:/opt/omd# find . -name cobian_backup
 ```
 4. Goto your Check_mk webinterface. Choose WATO -> Host & Service Parameters. Search for Backup Cobian.
 
-## On the UrBackup Server (NOT THE CHECK_MK SERVER!):
+## On the Windows machine where Cobian Backup is installed:
 1. Check if Powershell is installed
 2. Copy the plugin script [check_mk/agents/plugins/cobian_backup.ps1](check_mk/agents/plugins/cobian_backup.ps1) into C:\Program Files (x86)\check_mk\plugins (old check_mk agent) or C:\ProgramData\checkmk\agent\plugins (new check_mk agent > v1.6.0p8)
 5. Start PowerShell ISE and open the script. Click play to run it. The output should look as the following: 
@@ -32,7 +32,7 @@ bytes **
 ```
 
 ## Functions of the plugin
-![](https://github.com/edvler/check_mk-urbackup-check/blob/master/docs/cobian_backup-man_page.png)
+![](docs/cobian_backup-man_page.png)
 
 ## Services screenshot
-![](https://github.com/edvler/check_mk-urbackup-check/blob/master/docs/example-services-screenshot.png)
+![](docs/example-services-screenshot.png)
