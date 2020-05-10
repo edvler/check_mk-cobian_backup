@@ -1,0 +1,196 @@
+#!/usr/bin/python
+
+# Author: Matthias Maderer
+# E-Mail: edvler@edvler-blog.de
+# URL: https://github.com/edvler/check_mk_cobian_backup
+# License: GPLv2
+
+
+
+# Example agent output
+# <<<cobian_backup>>>
+#    2019-04-27 07:44 ** Backing up the task "Backup Ergodent" **
+#    2019-04-27 07:44 The Volume Shadow Copy snapshot set has been created successfully
+#    2019-04-27 07:52 The Volume Shadow Copy snapshot set has been successfully deleted
+#    2019-04-27 07:52 *** Backup done.  Errors: 0.  Processed files: 8999. Backed up files: 8999. Total size: 918,10 MB ***
+#    2019-04-27 08:39 ** Backing up the task "Backup byzz" **
+#    2019-04-27 08:39 The Volume Shadow Copy snapshot set has been created successfully
+#    2019-04-27 08:42 The Volume Shadow Copy snapshot set has been successfully deleted
+#    2019-04-27 08:42 *** Backup done.  Errors: 1.  Processed files: 57514. Backed up files: 1. Total size: 39 bytes ***
+
+cobian_backup_default_levels = {'check_backup': 'check', 'backup_age': (93600, 108000), 'backup_duration': (18000, 21600), 'ignore_vss': 'check', 'error_count_limits': (0, 0)}
+
+def inventory_cobian(info):
+    tasks = []
+    for line in info:
+        if line[3] == 'Backing' and line[4] == 'up' and line[5] == 'the' and line[6] == 'task':
+            task_name = line[7]
+            task_name = task_name.replace('"', '')
+            tasks.append(task_name)
+
+    distinct_tasks = list(set(tasks))
+    for task in distinct_tasks:
+        yield (
+         'Task ' + task, 'cobian_backup_default_levels')
+
+
+def check_cobian(item, params, info):
+    task = item.replace('Task ', '')
+
+    if params['check_backup'] == 'ignore':
+#        return (0, backup_type + ' check disabled by rule')
+         yield 0, 'Check disabled by rule'
+
+    # find the date and time of current (newest) backupt
+    backup_dates = dict()
+
+    # Add each start line of the task to array
+    for line in info:
+        if line[3] == 'Backing' and line[4] == 'up' and line[5] == 'the' and line[6] == 'task' and line[7] == '"' + task + '"':
+            if task not in backup_dates:
+               backup_dates[task] = [line[0] + line[1]]
+            else:
+               backup_dates[task].append(line[0] + line[1])
+
+    # Check if task was found in logs, if not exit.
+    if task not in backup_dates:
+        #return (2, 'Task not found in Backup logs.')
+        yield 2, 'Task not found in Backup logs.'
+        return
+
+    # Get the current log date
+    backup_dates[task].sort(key=lambda x: time.mktime(time.strptime(x,'%Y-%m-%d%H:%M')),reverse=True)
+
+    start_datetime=getDateFromString(backup_dates[task][0])
+    end_datetime=""
+    vss_create_status=1 # 1 = error, 0 = ok
+    vss_delete_status=1 # 1 = error, 0 = ok
+    job_errors=-1 # 0 = ok
+    files_processed=0
+    files_copied=0
+    c=0 
+
+    # Get logs of current task
+    for line in info:
+        # Search for current starting line
+        if line[0] + line[1] == backup_dates[task][0] and line[3] == 'Backing' and line[4] == 'up' and line[5] == 'the' and line[6] == 'task' and line[7] == '"' + task + '"':
+            c=1
+
+        # If start of log found parse items
+        if c>0:
+            if c==2: # VSS created
+                if line[len(line)-1] == 'successfully' and line[len(line)-2] == 'created':
+                    vss_create_status=0
+            if c==3: # VSS created
+                if line[len(line)-2] == 'successfully' and line[len(line)-1] == 'deleted':
+                    vss_delete_status=0
+            if c==4: # Backup Infos
+                if line[2] == '**' and line[3] == 'Backup' and line[4] == 'done':
+                    job_errors=int(line[len(line)-13].replace('.',''))
+                    files_processed=line[len(line)-10].replace('.','')
+                    files_copied=line[len(line)-6].replace('.','')
+                    end_datetime=getDateFromString(line[0] + line[1])
+            c=c+1
+
+        # Log is expected to be 4 lines long
+        if c==5:
+            break
+
+    ###### GENERATE OUTPUTS
+
+    # Check if backup is running
+    old = time.time() - time.mktime(start_datetime)
+    backup_duration_warn, backup_duration_error = params['backup_duration']
+    if end_datetime == "": 
+        if old < backup_duration_warn: 
+            yield 0,'Backup currently running. Starttime: ' + format_time(start_datetime)
+            return
+        if old >= backup_duration_warn and old < backup_duration_error:
+            yield 1,'Backup not finished yet! Starttime: ' + format_time(start_datetime)
+            return
+        if old >= backup_duration_error:
+            yield 2,'Backup not finished yet! Starttime: ' + format_time(start_datetime)
+            return
+
+
+
+    # Output backup age
+    warn, error = params['backup_age'] # params from wato
+    duration=time.mktime(end_datetime)-time.mktime(start_datetime)
+#    diff_to_current_date=time.time() - time.mktime(end_datetime)
+  
+    backup_age_line = 'Last Backup: ' + format_time(end_datetime) + ' (Age: ' + pretty_time_delta(old) + ', warn/crit at ' + pretty_time_delta(warn) + '/' + pretty_time_delta(error) + ')'
+
+    if old < warn:
+         yield 0, backup_age_line
+    if old >= warn and old < error:
+         yield 1, backup_age_line
+    if old >= error:
+         yield 2, backup_age_line
+
+    # Output VSS status
+    if params['ignore_vss'] == 'check': 
+        if vss_create_status == 0 and vss_delete_status == 0:
+            yield 0, "No VSS errors"
+        else:
+            yield 2, "VSS erros found!"
+    else:
+        yield 0, "VSS errors ignored" 
+  
+    # Output job errors 
+    warn_job_error_count, error_job_error_count = params['error_count_limits']
+    backup_error_text = "Backup error count: " + str(job_errors) + " (warn/crit > " + str(warn_job_error_count) + "/" + str(error_job_error_count) + ")"
+  
+    if job_errors <= warn_job_error_count:
+        yield 0, backup_error_text
+    if job_errors > warn_job_error_count and job_errors <= error_job_error_count:
+        yield 1, backup_error_text
+    if job_errors > error_job_error_count:
+        yield 2, backup_error_text 
+   
+
+ 
+    # Yield performance data
+    perfdata = [
+        ( "backup_age", int(old), warn, error ),
+        ( "job_duration", duration ),
+        ( "file_count", files_processed ),
+        ( "copyied_files", files_copied )
+    ]
+
+    yield None, None, perfdata
+
+
+check_info['cobian_backup'] = {
+   'check_function': check_cobian, 
+   'inventory_function': inventory_cobian, 
+   'service_description': 'Cobian Backup', 
+   'group': 'cobian',
+   'has_perfdata': True,
+}
+
+def getDateFromString(datetime_string):
+    try:
+        d = time.strptime(datetime_string, '%Y-%m-%d%H:%M')
+        return d
+    except ValueError:
+        return
+
+    return
+
+def format_time(timeobject):
+    return time.strftime("%Y-%m-%d %H:%M", timeobject)
+
+def pretty_time_delta(seconds):
+    sign_string = '-' if seconds < 0 else ''
+    seconds = abs(int(seconds))
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    if days > 0:
+        return '%s%d days %d hours %d minutes' % (sign_string, days, hours, minutes)
+    if hours > 0:
+        return '%s%d hours %d minutes' % (sign_string, hours, minutes)
+    if minutes > 0:
+        return '%s%d minutes' % (sign_string, minutes)
+    return '0 minutes'

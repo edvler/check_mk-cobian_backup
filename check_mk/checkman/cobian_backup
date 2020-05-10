@@ -1,0 +1,10 @@
+title: Plugin to check Cobian Backup status 
+agents: windows
+author: Matthias Maderer <edvler@edvler-blog.de>
+license: GPLv2
+distribution: check_mk
+description:
+ TODO
+
+inventory:
+ TODO
