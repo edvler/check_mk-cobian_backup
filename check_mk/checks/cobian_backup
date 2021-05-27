@@ -158,13 +158,13 @@ def check_cobian(item, params, info):
         ( "copyied_files", files_copied )
     ]
 
-    yield None, None, perfdata
+#    yield None, None, perfdata
 
 
 check_info['cobian_backup'] = {
    'check_function': check_cobian, 
    'inventory_function': inventory_cobian, 
-   'service_description': 'Cobian Backup', 
+   'service_description': 'Cobian Backup %s', 
    'group': 'cobian',
    'has_perfdata': True,
 }
