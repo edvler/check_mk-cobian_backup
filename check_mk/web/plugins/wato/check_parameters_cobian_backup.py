@@ -4,7 +4,7 @@
 # License: GPLv2
 
 register_check_parameters(
-    subgroup_os,
+    RulespecGroupCheckParametersApplications,
     "cobian",
     _("Backup Cobian"),
     Dictionary(
